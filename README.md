@@ -17,23 +17,22 @@ doctor availability, and produces a structured JSON summary.
 | Phase | Status |
 |---|---|
 | Study PatientAgentBench source | ✅ done — see [`docs/exploration/patientagentbench-notes.md`](docs/exploration/patientagentbench-notes.md) |
-| Minimal standalone conversation script, real sandbox + tools | ✅ tool mechanics verified (`--verify-tools-only`, no AWS needed); full console chat is written but **unverified — needs Bedrock credentials**, see [`docs/exploration/minimal_conversation.py`](docs/exploration/minimal_conversation.py) |
+| Minimal standalone conversation script, real sandbox + tools | ✅ tool mechanics verified (`--verify-tools-only`, no LLM needed), see [`docs/exploration/minimal_conversation.py`](docs/exploration/minimal_conversation.py) |
 | Repo scaffold (`agent/`, `backend/`, `frontend/`, `docs/`) | ✅ done |
 | Five-node graph, stub nodes, wiring tests | ✅ done — `uv run --package patient-intake-agent pytest agent/tests/` |
-| Real Intake / Emergency Guard / Triage / Scheduling / Summary node logic | ✅ done, 26 tests, all against fake LLMs + the real PatientAgentBench sandbox — **unverified against real Bedrock output**, see [Known limitations](#known-limitations) |
-| FastAPI backend (WebSocket chat + REST summary) | ✅ done, 5 tests + a real (non-`TestClient`) uvicorn boot check — same Bedrock caveat as above |
-| React + TypeScript frontend | ✅ built (chat window, typing indicator, summary panel) — `npm run build` is clean and every module round-trips through the Vite dev server, but **not yet clicked through in a real browser** (no browser automation tool in this environment) |
-| Example transcripts, architecture diagram | ⬜ not started |
+| Real Intake / Emergency Guard / Triage / Scheduling / Summary node logic | ✅ done, 26 tests against fake LLMs + the real PatientAgentBench sandbox, **plus a live end-to-end run against the real Gemini API** confirming the whole chain (extraction → question) works against actual model output |
+| FastAPI backend (WebSocket chat + REST summary) | ✅ done, 5 tests + a real (non-`TestClient`) uvicorn boot, **plus a live WebSocket smoke test against the running backend + real Gemini** |
+| React + TypeScript frontend | ✅ built (chat window, typing indicator, summary panel) — `npm run build` is clean; **still not clicked through in a real browser** (no browser automation tool in this environment) — please verify yourself |
+| Example transcripts, architecture diagram | ✅ done — see [`docs/architecture.md`](docs/architecture.md) and [`docs/transcripts/`](docs/transcripts/) |
 
-**Blocked on:** AWS Bedrock credentials, for one specific kind of
-verification only — an actual end-to-end conversation against a real model.
-Everything else needed zero AWS access: the graph, all 31 backend+agent
-tests (against fake LLMs and the real PatientAgentBench sandbox/tools), a
-real uvicorn boot, and the frontend build all run and pass with no
-credentials at all. What's *not* yet verified is real Bedrock output
-quality — whether the prompts actually produce sensible
-extractions/classifications from a real model, not just from the canned
-responses the tests supply — and a real click-through of the UI.
+**Not blocked anymore** — an LLM provider (Gemini, via `LLM_PROVIDER=gemini`
+in `.env`) is configured and has been exercised live: a real message got a
+real, sensible follow-up question back through the full agent → backend →
+WebSocket chain. What's still genuinely unverified: Bedrock/Anthropic
+specifically (only Gemini has been live-tested so far), the *emergency LLM
+classifier's* real-world recall on non-keyword phrasing (only the
+deterministic keyword tier has been exercised live), and a real click
+through the actual browser UI.
 
 ## Setup
 
@@ -48,9 +47,11 @@ git clone https://github.com/amazon-science/PatientAgentBench.git ../PatientAgen
 # 2. Install the workspace (agent + backend, and PatientAgentBench itself)
 uv sync --python 3.12
 
-# 3. AWS credentials for Bedrock (only needed once real node logic lands)
-cp .env.example .env   # fill in AWS_PROFILE or AWS_ACCESS_KEY_ID/SECRET, AWS_REGION
-aws sts get-caller-identity   # sanity check
+# 3. LLM credentials — pick one provider in .env (LLM_PROVIDER=bedrock, anthropic, or gemini)
+cp .env.example .env
+# bedrock: fill in AWS_PROFILE or AWS_ACCESS_KEY_ID/SECRET, AWS_REGION; then: aws sts get-caller-identity
+# anthropic: fill in ANTHROPIC_API_KEY
+# gemini: fill in GEMINI_API_KEY
 
 # 4. Run all tests (no AWS needed — every test uses a fake LLM + the real sandbox)
 uv run --package patient-intake-agent pytest agent/tests/ -v
@@ -70,6 +71,24 @@ cd frontend && npm install && npm run dev
 If you don't have PatientAgentBench as a sibling directory and want this repo
 fully self-contained, swap the dependency source in `agent/pyproject.toml`
 from the local path to the git URL (commented inline in that file).
+
+### Troubleshooting
+
+- **Chat input stays disabled / WebSocket never connects.** On macOS with
+  Docker Desktop running, its backend service can end up listening on
+  `*:8000` and `*:5173` (its own use of those ports, unrelated to this
+  project). Since `localhost` resolves to both `127.0.0.1` and `::1`, and
+  browsers prefer IPv6, the frontend can end up talking to Docker instead of
+  your backend. Fix: set `VITE_BACKEND_URL=http://127.0.0.1:8000` in
+  `frontend/.env.local` to force IPv4, and check `lsof -iTCP -sTCP:LISTEN`
+  if it still doesn't connect.
+- **`ValidationError ... Could not load credentials`, or the wrong provider
+  gets used even though `.env` looks right.** `.env.example` is a template
+  only — nothing reads that filename, you need an actual `.env` (`cp
+  .env.example .env`). `llm.py` loads it explicitly from `Mysource/.env`
+  regardless of current working directory, so this shouldn't recur, but if
+  you see a provider mismatch, confirm `Mysource/.env` (not `.env.example`)
+  has the values you expect.
 
 ## Your understanding of PatientAgentBench
 
@@ -137,7 +156,7 @@ what actually satisfies "runs on every patient turn, not just at the end."
   explicitly no-availability).
 
 A full visual architecture diagram (five-node graph + how it wraps
-PatientAgentBench's sandbox) is still to do.
+PatientAgentBench's sandbox) is in [`docs/architecture.md`](docs/architecture.md).
 
 ## Prompting strategy
 
@@ -215,8 +234,10 @@ before the final JSON summary is produced.
   mid-conversation topic switching to a second, unrelated complaint).
 - The patient scheduling directly, in English, is the one being seen (no
   proxy/caregiver-on-behalf-of flow).
-- AWS Bedrock is reachable with access to the configured model; no fallback
-  LLM provider.
+- One of AWS Bedrock, the Anthropic API directly, or Gemini is reachable
+  with access to the configured model — selectable via `LLM_PROVIDER` in
+  `.env` (see `agent/src/patient_intake_agent/llm.py`). No other providers
+  (e.g. OpenAI) are wired up.
 - PatientAgentBench's sandbox data (offices, doctors, appointment slots) is
   synthetic and hardcoded for this MVP rather than LLM-generated per session
   (see `docs/exploration/patientagentbench-notes.md` for why) — doctor
@@ -232,12 +253,14 @@ before the final JSON summary is produced.
 - **No diagnosis, by design.** The agent maps symptoms to a specialty/care
   level, never to a condition. This is a hard requirement, not a
   configurable behavior.
-- **Emergency detection has not been validated against a real model yet.**
-  The keyword tier is deterministic and thoroughly tested; the LLM
-  classifier fallback (for emergencies phrased without hitting a listed
-  keyword) has only been exercised against fake, canned LLM responses — its
-  real-world recall against actual Bedrock output is unverified. Until it
-  is, treat the LLM tier as unproven, not as a safety guarantee.
+- **The Emergency Guard's LLM classifier tier has not been validated
+  against a real model yet.** The keyword tier is deterministic and
+  thoroughly tested, and the wider system has now been confirmed to work
+  end-to-end against a real model (see Build status) — but the specific
+  fallback path for emergencies phrased without hitting a listed keyword has
+  only been exercised against fake, canned LLM responses so far. Until it's
+  live-tested, treat that specific tier as unproven, not as a safety
+  guarantee.
 - No persistence: state lives in memory for the duration of a session; a
   server restart loses in-progress conversations.
 - Single hardcoded sandbox, shared by every session on the backend (see
