@@ -1,0 +1,5 @@
+[tool.uv.workspace]
+members = ["agent", "backend"]
+
+[tool.uv]
+package = false
