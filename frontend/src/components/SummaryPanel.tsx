@@ -16,6 +16,17 @@ export function SummaryPanel({ summary }: { summary: PatientSummary }) {
       </span>
 
       <dl className="summary-fields">
+        {(summary.age !== null || summary.sex !== null) && (
+          <>
+            <dt>Patient</dt>
+            <dd>
+              {[summary.age !== null ? `${summary.age} years old` : null, summary.sex]
+                .filter(Boolean)
+                .join(", ") || "Not captured"}
+            </dd>
+          </>
+        )}
+
         <dt>Chief complaint</dt>
         <dd>{summary.chief_complaint ?? "Not captured"}</dd>
 

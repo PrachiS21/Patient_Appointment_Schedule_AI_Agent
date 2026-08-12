@@ -43,7 +43,7 @@ first message is already an obvious emergency.
   "symptoms": [],
   "summary": "Chief complaint: not captured. Emergency red-flag symptoms were detected during intake.",
   "risk_level": "HIGH",
-  "recommendation": "Based on what you've described, these symptoms warrant urgent medical evaluation. Please call 911 or go to the nearest emergency room now. This is not a diagnosis — it's a recommendation to be seen urgently, out of caution.",
+  "recommendation": "Based on what you've described, these symptoms warrant urgent medical evaluation. Please call 112 or go to the nearest emergency room now. This is not a diagnosis — it's a recommendation to be seen urgently, out of caution.",
   "requires_human": true,
   "missing_information": [],
   "specialty": null,

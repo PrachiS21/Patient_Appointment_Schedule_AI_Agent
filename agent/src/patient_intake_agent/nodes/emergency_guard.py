@@ -42,7 +42,7 @@ RED_FLAG_KEYWORDS = [
 
 URGENT_CARE_MESSAGE = (
     "Based on what you've described, these symptoms warrant urgent medical evaluation. "
-    "Please call 911 or go to the nearest emergency room now. This is not a diagnosis — "
+    "Please call 112 or go to the nearest emergency room now. This is not a diagnosis — "
     "it's a recommendation to be seen urgently, out of caution."
 )
 

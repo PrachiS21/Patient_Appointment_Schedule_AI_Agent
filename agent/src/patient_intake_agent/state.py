@@ -30,6 +30,8 @@ class Symptom(TypedDict, total=False):
     name: str
     onset: str
     severity: str
+    location: str  # where it hurts, for pain-type symptoms
+    character: str  # muscle / joint / bone / gland / organ / nerve / skin / etc.
     notes: str
 
 
@@ -79,6 +81,7 @@ class PatientState(TypedDict):
     stage: Stage
     turn_input: str | None
     awaiting_patient: bool
+    awaiting_confirmation: bool
     assistant_message: str | None
     final_summary: dict | None
 
@@ -104,6 +107,7 @@ def new_patient_state() -> PatientState:
         stage="intake",
         turn_input=None,
         awaiting_patient=False,
+        awaiting_confirmation=False,
         assistant_message=None,
         final_summary=None,
     )

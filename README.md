@@ -187,7 +187,35 @@ Safety language is a fixed constant, not LLM-generated: `URGENT_CARE_MESSAGE`
 in `emergency_guard.py` is the same literal string both the keyword tier and
 the LLM tier return, and it's what Summary's `recommendation` uses verbatim
 for any emergency case — so there's no path where phrasing drifts into
-something that reads as a diagnosis.
+something that reads as a diagnosis. (Emergency number is 112.)
+
+**What Intake actually converges on.** Rather than stopping after any single
+exchange, Intake's prompt (`nodes/intake.py::_EXTRACTION_PROMPT_TEMPLATE`)
+gives the LLM a priority-ordered checklist and tells it not to rush — apply
+only whichever categories are relevant to what the patient actually
+described:
+
+1. Age — always required, every conversation. This is the one category
+   enforced at the *code* level too, not just prompted: if the model sets
+   `ready_for_triage=true` without age having been captured, `intake_node`
+   overrides it and forces a direct age question instead of trusting it.
+2. Symptom-specific detail: a temperature reading + associated symptoms
+   (cold, cough, vomiting, chills, etc.) for fever; a location + character
+   (muscle/joint/bone/gland/organ/nerve/skin) for pain.
+3. Onset and severity of the chief complaint.
+4. History — recurring before, currently on medication for it.
+5. Any other symptoms alongside the main complaint.
+
+Once that's satisfied, Intake doesn't hand off to Triage immediately —
+it recites everything gathered back to the patient and waits for them to
+confirm before moving on (`nodes/intake.py::_confirmation_recap` /
+`_confirmation_phase`). Whether a reply counts as confirming vs. correcting
+something is itself an LLM judgment call (`IntakeExtraction.patient_confirmed`),
+not a keyword match — "actually I'm 30, not 29" gets merged like a real
+correction, re-recited, and confirmation is asked for again, rather than
+being misread as a "no". This whole exchange (gathering + confirming)
+routinely takes 3-5 conversational turns in practice (verified live against
+Gemini), not one — see `docs/transcripts/` for the shape of it.
 
 ## Conversation flow
 
@@ -198,16 +226,21 @@ for the assignment's own example ("I've had a fever since yesterday"):
 1. **Turn 1** — Emergency Guard finds no red flags → Intake extracts a chief
    complaint, asks one follow-up question (e.g. age and severity), and
    pauses.
-2. **Turn 2** — patient answers → Emergency Guard re-checks (runs on *every*
-   turn) → Intake decides enough is known → Triage classifies a specialty
-   and looks up real candidate doctors → Scheduling asks for availability
-   and pauses, all within the same invocation (only Intake and Scheduling
-   ever pause; Triage never does, since it only uses what's already been
+2. **Turns 2..N** — patient answers, Emergency Guard re-checks every turn,
+   Intake keeps gathering (symptom-specific detail, history, medication —
+   see [Prompting strategy](#prompting-strategy)) until it judges the
+   picture well-rounded, *then* recites everything back and asks the
+   patient to confirm — that confirmation exchange is itself one or more
+   turns (a correction re-recites and asks again).
+3. **The turn confirmation succeeds** — Intake hands off to Triage, which
+   classifies a specialty and looks up real candidate doctors, then
+   Scheduling asks for availability and pauses, all within that same
+   invocation (Triage never pauses; it only uses what's already been
    collected).
-3. **Turn 3** — patient states their availability → Scheduling reconciles it
-   against real open slots for the candidate doctor(s), books one (or falls
-   back to a "no availability" outcome — never retries in a loop) →
-   Summary serializes the final JSON.
+4. **The next turn** — patient states their availability → Scheduling
+   reconciles it against real open slots for the candidate doctor(s), books
+   one (or falls back to a "no availability" outcome — never retries in a
+   loop) → Summary serializes the final JSON.
 
 If a red-flag symptom appears on *any* turn — including mid-scheduling, after
 a specialist has already been picked — Emergency Guard short-circuits

@@ -42,7 +42,9 @@ def _sandbox_with_one_slot() -> HealthcareSandbox:
     return sandbox
 
 
-def test_full_three_turn_conversation_books_a_real_appointment():
+def test_full_four_turn_conversation_books_a_real_appointment():
+    """Four turns, not three, since Intake now asks for confirmation before
+    handing off to Triage (see test_intake.py for that behavior in isolation)."""
     sandbox = _sandbox_with_one_slot()
     fake_llm = FakeStructuredLLM(
         [
@@ -55,7 +57,7 @@ def test_full_three_turn_conversation_books_a_real_appointment():
                 ready_for_triage=False,
                 next_question="What is your age, and how severe is the fever?",
             ),
-            # Turn 2: "I'm 34 and it's mild."
+            # Turn 2: "I'm 34 and it's mild." -> ready, but pauses for confirmation.
             NOT_EMERGENCY,
             IntakeExtraction(
                 demographics_update={"age": "34"},
@@ -63,8 +65,12 @@ def test_full_three_turn_conversation_books_a_real_appointment():
                 still_missing=[],
                 ready_for_triage=True,
             ),
+            # Turn 3: "Yes, that's correct." -> confirmed, hands off to Triage
+            # and Scheduling in the same invocation.
+            NOT_EMERGENCY,
+            IntakeExtraction(still_missing=[], ready_for_triage=True, patient_confirmed=True),
             TriageClassification(specialty="Primary Care", confidence=0.9, reasoning="Routine fever."),
-            # Turn 3: "Monday morning works great."
+            # Turn 4: "Monday morning works great."
             NOT_EMERGENCY,
             SlotSelection(slot_id="slot_001", reasoning="Matches Monday morning."),
         ]
@@ -76,11 +82,19 @@ def test_full_three_turn_conversation_books_a_real_appointment():
     state = graph.invoke(state)
     assert state["stage"] == "intake"
     assert state["awaiting_patient"] is True
+    assert state["awaiting_confirmation"] is False
 
     state["turn_input"] = "I'm 34 and it's mild."
     state = graph.invoke(state)
+    assert state["stage"] == "intake"  # not handed off yet — awaiting confirmation
+    assert state["awaiting_patient"] is True
+    assert state["awaiting_confirmation"] is True
+
+    state["turn_input"] = "Yes, that's correct."
+    state = graph.invoke(state)
     assert state["stage"] == "scheduling"
     assert state["awaiting_patient"] is True
+    assert state["awaiting_confirmation"] is False
     assert state["suggested_specialty"] == "Primary Care"
 
     state["turn_input"] = "Monday morning works great."

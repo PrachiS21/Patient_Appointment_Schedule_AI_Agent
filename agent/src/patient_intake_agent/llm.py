@@ -2,13 +2,14 @@
 
 Every real node takes an `llm` argument rather than calling `get_llm()`
 itself, so tests can inject a fake (see agent/tests/fakes.py) and never touch
-AWS, Anthropic, or Google. `get_llm()` is only what the real graph
-(graph.py::build_graph) binds in by default.
+AWS, Anthropic, Google, or a local Ollama server. `get_llm()` is only what
+the real graph (graph.py::build_graph) binds in by default.
 
-Three providers, chosen via LLM_PROVIDER — "bedrock" (default), "anthropic"
-(the Claude API directly, no AWS involved), or "gemini" — so switching is a
-.env change, not a code change. Still much smaller than PatientAgentBench's
-own config.py: that factory supports arbitrary registry models plus Mantle
+Four providers, chosen via LLM_PROVIDER — "bedrock" (default), "anthropic"
+(the Claude API directly, no AWS involved), "gemini", or "ollama" (a local
+model, no API key or network call at all) — so switching is a .env change,
+not a code change. Still much smaller than PatientAgentBench's own
+config.py: that factory supports arbitrary registry models plus Mantle
 gateway auth, role assumption, and thinking budgets, because it has to run
 benchmark roles across many models. We only need model selection + auth,
 nothing else.
@@ -39,7 +40,12 @@ load_dotenv(Path(__file__).resolve().parents[3] / ".env", override=True)
 
 DEFAULT_BEDROCK_MODEL_ID = "global.anthropic.claude-sonnet-5"
 DEFAULT_ANTHROPIC_MODEL_ID = "claude-sonnet-5"
-DEFAULT_GEMINI_MODEL_ID = "gemini-2.5-flash"
+# "gemini-flash-latest" is a Google-maintained alias, not a pinned version —
+# pinned model IDs (e.g. "gemini-2.5-flash") can lose access for new API
+# keys/projects even while still listed by ListModels; the alias sidesteps that.
+DEFAULT_GEMINI_MODEL_ID = "gemini-flash-latest"
+DEFAULT_OLLAMA_MODEL_ID = "llama3.2:3b"
+DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 
 SchemaT = TypeVar("SchemaT", bound="BaseModel")
 
@@ -50,8 +56,9 @@ def get_llm() -> "BaseChatModel":
 
     Reads LLM_PROVIDER to decide which one — imported lazily (inside each
     branch) so importing this module never requires langchain_aws/boto3,
-    langchain_anthropic, or langchain_google_genai to be importable; only
-    whichever branch actually runs needs its package installed.
+    langchain_anthropic, langchain_google_genai, or langchain_ollama to be
+    importable; only whichever branch actually runs needs its package
+    installed.
     """
     provider = os.environ.get("LLM_PROVIDER", "bedrock").lower()
 
@@ -83,9 +90,30 @@ def get_llm() -> "BaseChatModel":
             kwargs["google_api_key"] = api_key
         return ChatGoogleGenerativeAI(**kwargs)
 
+    if provider == "ollama":
+        from langchain_ollama import ChatOllama
+
+        # No API key, ever — this hits a server on localhost. Free and
+        # unrate-limited, at the cost of a much smaller/weaker model than
+        # the hosted providers above (see the tradeoff noted in llm.py's
+        # module docstring / the root README's Known Limitations).
+        #
+        # temperature=0.1: local models default to a much higher temperature
+        # (Ollama's own default is ~0.8), tuned for creative chat, not for
+        # reliably following "here's what's already known, don't ask again."
+        # Structured extraction wants near-deterministic output.
+        # num_ctx: explicit rather than trusting the server's default, so
+        # conversation history isn't silently truncated as it grows.
+        return ChatOllama(
+            model=os.environ.get("OLLAMA_MODEL_ID", DEFAULT_OLLAMA_MODEL_ID),
+            base_url=os.environ.get("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL),
+            temperature=0.1,
+            num_ctx=8192,
+        )
+
     if provider != "bedrock":
         raise ValueError(
-            f"Unknown LLM_PROVIDER '{provider}'. Use 'bedrock', 'anthropic', or 'gemini'."
+            f"Unknown LLM_PROVIDER '{provider}'. Use 'bedrock', 'anthropic', 'gemini', or 'ollama'."
         )
 
     from langchain_aws import ChatBedrockConverse

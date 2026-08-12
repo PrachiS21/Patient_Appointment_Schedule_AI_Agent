@@ -31,6 +31,11 @@ class ScheduledAppointmentSummary(BaseModel):
 
 
 class PatientSummary(BaseModel):
+    # Both optional: on the emergency short-circuit path, Intake never runs
+    # at all (Emergency Guard is the graph's entry point — see graph.py's
+    # module docstring), so neither is ever collected there.
+    age: int | None = None
+    sex: str | None = None
     chief_complaint: str | None
     symptoms: list[dict]
     summary: str
@@ -40,6 +45,24 @@ class PatientSummary(BaseModel):
     missing_information: list[str]
     specialty: str | None = None
     scheduled_appointment: ScheduledAppointmentSummary | None = None
+
+
+def _parse_age(demographics: dict) -> int | None:
+    """Best-effort int parse — `demographics["age"]` is free text an LLM
+    populated (e.g. "34", "34 years old"), not a guaranteed clean integer."""
+    raw = demographics.get("age")
+    if not raw:
+        return None
+    digits = "".join(ch for ch in str(raw) if ch.isdigit())
+    return int(digits) if digits else None
+
+
+def _extract_sex(demographics: dict) -> str | None:
+    for key in ("sex", "gender"):
+        value = demographics.get(key)
+        if value:
+            return str(value)
+    return None
 
 
 def _compose_summary_text(state: PatientState) -> str:
@@ -106,6 +129,8 @@ def _scheduled_appointment_payload(state: PatientState) -> dict | None:
 
 def summary_node(state: PatientState) -> dict:
     payload = {
+        "age": _parse_age(state["demographics"]),
+        "sex": _extract_sex(state["demographics"]),
         "chief_complaint": state["chief_complaint"],
         "symptoms": state["symptoms"],
         "summary": _compose_summary_text(state),

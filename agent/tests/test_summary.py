@@ -10,7 +10,7 @@ def test_normal_booked_appointment_produces_a_schema_valid_summary():
     state = new_patient_state()
     state["chief_complaint"] = "Fever since yesterday"
     state["symptoms"] = [{"name": "fever", "onset": "yesterday", "severity": "mild"}]
-    state["demographics"] = {"age": "34"}
+    state["demographics"] = {"age": "34", "sex": "female"}
     state["risk_level"] = "LOW"
     state["suggested_specialty"] = "Primary Care"
     state["selected_appointment"] = {
@@ -26,6 +26,8 @@ def test_normal_booked_appointment_produces_a_schema_valid_summary():
 
     summary = result["final_summary"]
     PatientSummary.model_validate(summary)  # re-validate the exact output shape
+    assert summary["age"] == 34
+    assert summary["sex"] == "female"
     assert summary["requires_human"] is False
     assert summary["risk_level"] == "LOW"
     assert summary["specialty"] == "Primary Care"
@@ -36,6 +38,37 @@ def test_normal_booked_appointment_produces_a_schema_valid_summary():
     }
     assert "Dr. Alice Nguyen" in summary["recommendation"]
     assert result["stage"] == "done"
+
+
+def test_age_parses_from_messy_free_text():
+    state = new_patient_state()
+    state["demographics"] = {"age": "34 years old"}
+
+    result = summary_node(state)
+
+    assert result["final_summary"]["age"] == 34
+
+
+def test_sex_falls_back_to_gender_key():
+    state = new_patient_state()
+    state["demographics"] = {"gender": "male"}
+
+    result = summary_node(state)
+
+    assert result["final_summary"]["sex"] == "male"
+
+
+def test_age_and_sex_are_null_when_never_collected():
+    """The emergency short-circuit path never runs Intake at all, so these
+    are legitimately unknown — must not raise, must not fake a value."""
+    state = new_patient_state()
+    state["emergency_flag"] = True
+    state["risk_level"] = "HIGH"
+
+    result = summary_node(state)
+
+    assert result["final_summary"]["age"] is None
+    assert result["final_summary"]["sex"] is None
 
 
 def test_emergency_summary_requires_human_and_uses_the_fixed_urgent_care_message():

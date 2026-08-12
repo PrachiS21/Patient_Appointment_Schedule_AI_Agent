@@ -7,6 +7,8 @@ export interface ScheduledAppointmentSummary {
 }
 
 export interface PatientSummary {
+  age: number | null;
+  sex: string | null;
   chief_complaint: string | null;
   symptoms: Record<string, string>[];
   summary: string;
