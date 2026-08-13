@@ -11,6 +11,9 @@ build/
 .env
 .env.local
 
+# Runtime data
+backend/chats.db
+
 # Node / frontend
 node_modules/
 frontend/dist/

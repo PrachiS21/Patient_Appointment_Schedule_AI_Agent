@@ -294,8 +294,12 @@ before the final JSON summary is produced.
   only been exercised against fake, canned LLM responses so far. Until it's
   live-tested, treat that specific tier as unproven, not as a safety
   guarantee.
-- No persistence: state lives in memory for the duration of a session; a
-  server restart loses in-progress conversations.
+- **Partial persistence.** *Finished* chats are durable — saved to SQLite
+  (`backend/chats.db`) the moment a session reaches `stage == "done"`,
+  readable via `GET /api/chats` / `GET /api/chats/{id}` even after a
+  restart (see `backend/README.md`). *In-progress* conversations are still
+  only in memory — a server restart mid-conversation loses that session's
+  state, same as before.
 - Single hardcoded sandbox, shared by every session on the backend (see
   Assumptions and `sandbox_setup.py`) — not connected to any real
   EHR/scheduling backend, and two concurrent users can compete for the same

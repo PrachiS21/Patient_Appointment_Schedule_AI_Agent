@@ -82,6 +82,14 @@ def get_llm() -> "BaseChatModel":
         kwargs = {
             "model": os.environ.get("GEMINI_MODEL_ID", DEFAULT_GEMINI_MODEL_ID),
             "max_tokens": 2048,
+            # ChatGoogleGenerativeAI defaults to timeout=None (no per-attempt
+            # cap) and max_retries=6 — observed in practice to occasionally
+            # turn one structured-output call into 200+ seconds of silent
+            # retries with no user-visible error. 30s/2 retries means a bad
+            # attempt fails fast (worst case ~90s) instead of hanging near a
+            # minute-plus with nothing shown in the UI.
+            "timeout": 30,
+            "max_retries": 2,
         }
         # Same omit-if-unset pattern as Anthropic above — GEMINI_API_KEY (or
         # ChatGoogleGenerativeAI's own GOOGLE_API_KEY fallback) wins either way.

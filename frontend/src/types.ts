@@ -20,18 +20,23 @@ export interface PatientSummary {
   scheduled_appointment: ScheduledAppointmentSummary | null;
 }
 
-/** One line in the transcript. `role: "assistant"` covers both real
- * assistant replies and the typing placeholder is handled separately, not
- * as a chat message. */
+/** One line in the transcript. `role: "assistant"` covers real assistant
+ * replies; `role: "error"` is a failed-turn notice (see useChatSession.ts)
+ * rendered inline so it's visible in context, not just a toast. The typing
+ * placeholder is handled separately, not as a chat message. */
 export interface ChatMessage {
   id: string;
-  role: "patient" | "assistant";
+  role: "patient" | "assistant" | "error";
   content: string;
 }
 
-/** Server -> client WebSocket payloads (see backend_app/main.py). */
+/** Server -> client WebSocket payloads (see backend_app/main.py). "error"
+ * means this turn's graph.invoke() failed (provider rate limit, transient
+ * server error, timeout, etc.) — the session's last successful state is
+ * unchanged server-side, so the patient can just retry. */
 export type ServerEvent =
   | { type: "typing" }
+  | { type: "error"; message: string }
   | {
       type: "message";
       content: string | null;

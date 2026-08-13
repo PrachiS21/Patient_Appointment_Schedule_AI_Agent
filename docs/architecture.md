@@ -1,7 +1,9 @@
 # Architecture
 
 Two views: the five-node graph itself, and how the whole application wraps
-around PatientAgentBench.
+around PatientAgentBench. A print-ready PDF of this page (for the
+assignment's separate "architecture diagram" deliverable) is at
+[`architecture.pdf`](architecture.pdf) in this same directory.
 
 ## The five-node graph
 
@@ -17,10 +19,10 @@ flowchart TD
 
     EG -- "red flag found" --> SUM["Summary<br/>(serialize + validate JSON)"]
     EG -- "stage == scheduling" --> SCHED
-    EG -- "otherwise" --> IN["Intake<br/>(extract symptoms/demographics,<br/>ask one follow-up question)"]
+    EG -- "otherwise" --> IN["Intake<br/>(extract symptoms/demographics,<br/>ask one follow-up question,<br/>then confirm before handoff)"]
 
-    IN -- "still missing info<br/>(pause)" --> END1(["wait for next<br/>patient message"])
-    IN -- "enough gathered" --> TRI["Triage<br/>(rules table, then LLM;<br/>list_doctors on sandbox)"]
+    IN -- "still missing info,<br/>or awaiting confirmation<br/>(pause)" --> END1(["wait for next<br/>patient message"])
+    IN -- "confirmed" --> TRI["Triage<br/>(rules table, then LLM;<br/>list_doctors on sandbox)"]
 
     TRI --> SCHED["Scheduling<br/>(get_available_appointments,<br/>reconcile, schedule_appointment)"]
 
@@ -42,39 +44,47 @@ diagram (`Intake → Emergency Guard → Triage → Scheduling → Summary`)
 doesn't: Emergency Guard sits on *every* path, including a direct route from
 mid-scheduling straight to Summary; and only two nodes (Intake, Scheduling)
 ever pause for another patient message — Triage always completes in the
-same turn as whatever handed control to it.
+same turn as whatever handed control to it. Intake's pause covers two
+different sub-states now (still gathering, or reciting a confirmation
+recap and waiting on a yes/correction) — both look identical to the graph
+itself (`stage` stays `"intake"`), the distinction lives inside the node.
 
 ## How the application wraps PatientAgentBench
 
 ```mermaid
 flowchart LR
     subgraph client["Browser"]
-        FE["React + TypeScript<br/>(chat window, typing indicator,<br/>summary panel)"]
+        FE["React + TypeScript<br/>chat window · typing indicator · summary panel"]
     end
 
     subgraph server["patient-intake-backend (FastAPI)"]
         WS["WS /ws/chat/{session_id}"]
-        REST["GET /api/sessions/{id}/summary"]
-        SESS[("in-memory<br/>session store")]
+        RESTS["GET /api/sessions/{id}/summary<br/>(in-memory, live sessions only)"]
+        RESTC["GET /api/chats, /api/chats/{id}<br/>(SQLite, durable)"]
+        SESS[("in-memory<br/>SessionStore")]
+        DB[("SQLite<br/>chats.db")]
     end
 
     subgraph agent["patient-intake-agent"]
-        GRAPH["five-node StateGraph<br/>(see diagram above)"]
-        LLM["ChatBedrockConverse<br/>(langchain-aws)"]
+        GRAPH["five-node StateGraph"]
+        LLM["ChatBedrockConverse · ChatAnthropic ·<br/>ChatGoogleGenerativeAI · ChatOllama<br/>(LLM_PROVIDER env var picks one)"]
     end
 
     subgraph pab["PatientAgentBench (reused, not forked)"]
-        SANDBOX["HealthcareSandbox<br/>(offices, doctors, slots,<br/>booked appointments)"]
+        SANDBOX["HealthcareSandbox<br/>offices · doctors · slots · bookings"]
         TOOLS["appointment_tools<br/>(list_doctors, get_available_appointments,<br/>schedule_appointment, ...)"]
     end
 
     FE <-- "JSON over WebSocket" --> WS
-    FE -. "final_summary already<br/>arrives over WS" .-> REST
+    FE -. "REST (browse past chats)" .-> RESTC
     WS --> SESS
-    WS -- "graph.invoke(state)" --> GRAPH
+    WS -- "on stage == done" --> DB
+    WS -- "graph.invoke(state)<br/>(failures caught -> error event,<br/>connection stays open)" --> GRAPH
     GRAPH -- "structured_call()" --> LLM
     GRAPH -- "get_doctors(), get_available_slots(),<br/>book_appointment()" --> SANDBOX
     TOOLS -.->|"same sandbox methods,<br/>reused directly"| SANDBOX
+    RESTS --> SESS
+    RESTC --> DB
 
     classDef reused fill:#e0e7ff,stroke:#3730a3,color:#111
     class SANDBOX,TOOLS reused
@@ -87,3 +97,14 @@ real `HealthcareSandbox` and Triage/Scheduling call its methods
 methods PatientAgentBench's own `appointment_tools.py` calls internally. See
 [`docs/exploration/patientagentbench-notes.md`](exploration/patientagentbench-notes.md)
 for the full reused-vs-built breakdown.
+
+Two data stores, on purpose, not one merged into the other: `SessionStore`
+is fast, in-memory, and only ever holds *live* conversations — gone on
+restart. `chats.db` (SQLite) is the durable record, written exactly once per
+session, the moment it reaches `stage == "done"` (see `backend/README.md`).
+
+A `graph.invoke()` failure — a provider rate limit, a transient server
+error, a timeout, none of which are within this app's control — is caught
+per-turn in the WebSocket handler and reported to the browser as a visible,
+in-transcript error message rather than left to kill the connection
+silently.

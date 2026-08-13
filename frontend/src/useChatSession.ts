@@ -52,6 +52,16 @@ export function useChatSession(): ChatSession {
       }
 
       setIsTyping(false);
+
+      if (data.type === "error") {
+        // The session's last successful state is untouched server-side
+        // (see main.py's chat() handler) — this is recoverable, so surface
+        // it inline in the transcript and let the patient just try again;
+        // input stays enabled (isDone/isConnected are unaffected).
+        setMessages((prev) => [...prev, { id: newId(), role: "error", content: data.message }]);
+        return;
+      }
+
       if (data.content) {
         setMessages((prev) => [...prev, { id: newId(), role: "assistant", content: data.content as string }]);
       }
