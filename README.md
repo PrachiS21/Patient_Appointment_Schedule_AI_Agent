@@ -36,59 +36,24 @@ through the actual browser UI.
 
 ## Setup
 
-Requires Python 3.12 and [`uv`](https://docs.astral.sh/uv/).
+See **[`SETUP.md`](SETUP.md)** for the full standalone setup guide
+(prerequisites, all four LLM provider options with their tradeoffs, running
+tests, running the backend/frontend, verifying it works, and a
+troubleshooting section covering every real issue hit during development —
+a macOS/Docker port conflict, `.env` vs. `.env.example`, provider switches
+needing a restart, and slow/hanging LLM calls).
+
+Fastest path if you just want it running:
 
 ```bash
-# 1. Clone PatientAgentBench as a sibling directory of this repo (the agent
-#    package depends on it via a local path source — see agent/pyproject.toml).
-#    If you're reading this inside the assignment workspace, it's already there.
 git clone https://github.com/amazon-science/PatientAgentBench.git ../PatientAgentBench
-
-# 2. Install the workspace (agent + backend, and PatientAgentBench itself)
 uv sync --python 3.12
-
-# 3. LLM credentials — pick one provider in .env (LLM_PROVIDER=bedrock, anthropic, or gemini)
-cp .env.example .env
-# bedrock: fill in AWS_PROFILE or AWS_ACCESS_KEY_ID/SECRET, AWS_REGION; then: aws sts get-caller-identity
-# anthropic: fill in ANTHROPIC_API_KEY
-# gemini: fill in GEMINI_API_KEY
-
-# 4. Run all tests (no AWS needed — every test uses a fake LLM + the real sandbox)
+cp .env.example .env   # then fill in one provider — see SETUP.md
 uv run --package patient-intake-agent pytest agent/tests/ -v
-uv run --package patient-intake-backend pytest backend/tests/ -v
-
-# 5. Verify PatientAgentBench's real sandbox + tools directly (no AWS needed)
-uv run --package patient-intake-agent python docs/exploration/minimal_conversation.py --verify-tools-only
-
-# 6. Run the backend for real (needs AWS credentials from step 3 — the graph
-#    is only built lazily, on the first chat message)
 cd backend && uv run --package patient-intake-backend uvicorn backend_app.main:app --app-dir src --port 8000
-
-# 7. In a separate terminal, run the frontend (needs Node.js)
+# separate terminal:
 cd frontend && npm install && npm run dev
 ```
-
-If you don't have PatientAgentBench as a sibling directory and want this repo
-fully self-contained, swap the dependency source in `agent/pyproject.toml`
-from the local path to the git URL (commented inline in that file).
-
-### Troubleshooting
-
-- **Chat input stays disabled / WebSocket never connects.** On macOS with
-  Docker Desktop running, its backend service can end up listening on
-  `*:8000` and `*:5173` (its own use of those ports, unrelated to this
-  project). Since `localhost` resolves to both `127.0.0.1` and `::1`, and
-  browsers prefer IPv6, the frontend can end up talking to Docker instead of
-  your backend. Fix: set `VITE_BACKEND_URL=http://127.0.0.1:8000` in
-  `frontend/.env.local` to force IPv4, and check `lsof -iTCP -sTCP:LISTEN`
-  if it still doesn't connect.
-- **`ValidationError ... Could not load credentials`, or the wrong provider
-  gets used even though `.env` looks right.** `.env.example` is a template
-  only — nothing reads that filename, you need an actual `.env` (`cp
-  .env.example .env`). `llm.py` loads it explicitly from `Mysource/.env`
-  regardless of current working directory, so this shouldn't recur, but if
-  you see a provider mismatch, confirm `Mysource/.env` (not `.env.example`)
-  has the values you expect.
 
 ## Your understanding of PatientAgentBench
 
