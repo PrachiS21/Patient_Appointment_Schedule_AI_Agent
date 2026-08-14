@@ -13,6 +13,14 @@ config.py: that factory supports arbitrary registry models plus Mantle
 gateway auth, role assumption, and thinking budgets, because it has to run
 benchmark roles across many models. We only need model selection + auth,
 nothing else.
+
+The "gemini" provider specifically returns a `_FallbackLLM` wrapping several
+model IDs, not a single `ChatGoogleGenerativeAI` — Google's free-tier quota
+is tracked per model, so on a rate limit or transient server error it
+retries the *same call* against the next model automatically, in-process.
+This matters because the alternative — editing .env and restarting the
+backend to switch models — wipes every in-progress conversation (in-memory
+SessionStore, see backend/session_store.py); this fallback keeps it intact.
 """
 
 from __future__ import annotations
@@ -44,10 +52,62 @@ DEFAULT_ANTHROPIC_MODEL_ID = "claude-sonnet-5"
 # pinned model IDs (e.g. "gemini-2.5-flash") can lose access for new API
 # keys/projects even while still listed by ListModels; the alias sidesteps that.
 DEFAULT_GEMINI_MODEL_ID = "gemini-flash-latest"
+# Google's free-tier quota is tracked *per model*, not per key/project (the
+# 429 error's quotaId is literally "...PerProjectPerModel-FreeTier") — so a
+# model this key hasn't touched today still has its own untouched allowance.
+# These are tried in order after GEMINI_MODEL_ID itself; see _FallbackLLM.
+GEMINI_FALLBACK_MODEL_IDS = [
+    "gemini-2.5-flash-lite",
+    "gemini-flash-lite-latest",
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+]
 DEFAULT_OLLAMA_MODEL_ID = "llama3.2:3b"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 
 SchemaT = TypeVar("SchemaT", bound="BaseModel")
+
+
+class _FallbackBoundRunnable:
+    """Returned by _FallbackLLM.with_structured_output(schema) — tries each
+    underlying model's own with_structured_output(schema).invoke(prompt) in
+    order, moving on when one raises."""
+
+    def __init__(self, models: list, schema: type):
+        self._models = models
+        self._schema = schema
+
+    def invoke(self, prompt):
+        last_exc: Exception | None = None
+        for model in self._models:
+            try:
+                return model.with_structured_output(self._schema).invoke(prompt)
+            except Exception as exc:  # noqa: BLE001 — deliberately broad, see class docstring
+                last_exc = exc
+                continue
+        raise last_exc  # every model failed — nothing left to try
+
+
+class _FallbackLLM:
+    """Wraps several real chat models behind the same duck-typed interface
+    every node already expects (`.with_structured_output(schema).invoke(...)`
+    — see structured_call() below and agent/tests/fakes.py). On failure
+    (rate limit, transient server overload, timeout) it moves to the next
+    model automatically, in the same call, in the same running process.
+
+    This exists specifically so a mid-conversation quota/overload failure
+    doesn't require restarting the backend to switch providers — a restart
+    wipes the in-memory SessionStore (see session_store.py), losing
+    everything the patient has said so far. Falling back in-process keeps
+    the conversation intact; only this one call retries against a
+    different model.
+    """
+
+    def __init__(self, models: list):
+        self._models = models
+
+    def with_structured_output(self, schema):
+        return _FallbackBoundRunnable(self._models, schema)
 
 
 @lru_cache(maxsize=1)
@@ -79,8 +139,7 @@ def get_llm() -> "BaseChatModel":
     if provider == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI
 
-        kwargs = {
-            "model": os.environ.get("GEMINI_MODEL_ID", DEFAULT_GEMINI_MODEL_ID),
+        common_kwargs = {
             "max_tokens": 2048,
             # ChatGoogleGenerativeAI defaults to timeout=None (no per-attempt
             # cap) and max_retries=6 — observed in practice to occasionally
@@ -95,8 +154,14 @@ def get_llm() -> "BaseChatModel":
         # ChatGoogleGenerativeAI's own GOOGLE_API_KEY fallback) wins either way.
         api_key = os.environ.get("GEMINI_API_KEY")
         if api_key:
-            kwargs["google_api_key"] = api_key
-        return ChatGoogleGenerativeAI(**kwargs)
+            common_kwargs["google_api_key"] = api_key
+
+        primary_model_id = os.environ.get("GEMINI_MODEL_ID", DEFAULT_GEMINI_MODEL_ID)
+        model_ids = [primary_model_id] + [
+            m for m in GEMINI_FALLBACK_MODEL_IDS if m != primary_model_id
+        ]
+        models = [ChatGoogleGenerativeAI(model=m, **common_kwargs) for m in model_ids]
+        return _FallbackLLM(models)
 
     if provider == "ollama":
         from langchain_ollama import ChatOllama
