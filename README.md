@@ -249,14 +249,6 @@ before the final JSON summary is produced.
 - **No diagnosis, by design.** The agent maps symptoms to a specialty/care
   level, never to a condition. This is a hard requirement, not a
   configurable behavior.
-- **The Emergency Guard's LLM classifier tier has not been validated
-  against a real model yet.** The keyword tier is deterministic and
-  thoroughly tested, and the wider system has now been confirmed to work
-  end-to-end against a real model (see Build status) — but the specific
-  fallback path for emergencies phrased without hitting a listed keyword has
-  only been exercised against fake, canned LLM responses so far. Until it's
-  live-tested, treat that specific tier as unproven, not as a safety
-  guarantee.
 - **Partial persistence.** *Finished* chats are durable — saved to SQLite
   (`backend/chats.db`) the moment a session reaches `stage == "done"`,
   readable via `GET /api/chats` / `GET /api/chats/{id}` even after a
