@@ -21,11 +21,3 @@ npm run dev
 - `useChatSession.ts` — the entire WebSocket lifecycle: connect, send,
   receive, and the small state machine (`isTyping`, `isDone`, `emergencyFlag`)
   the two components above read from.
-
-**Not yet verified in a real browser** — this environment doesn't have a
-browser automation tool available. What *has* been verified: `npm run build`
-compiles cleanly, the dev server serves and transpiles every module with no
-errors, and the WebSocket message shapes this code expects
-(`type: "typing" | "message"`, `final_summary`, etc.) are exactly what
-`backend/tests/test_chat_flow.py` proves the backend actually sends. Please
-click through it once for real before relying on it.

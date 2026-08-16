@@ -180,7 +180,7 @@ if you see a red error bubble, just try again; nothing is lost.
 **Ollama repeats a question you already answered.**
 This is a known, diagnosed limitation, not a setup mistake — see the
 `ollama` row in the provider table above. Switch to `gemini` if this
-matters for what you're testing.
+persists.
 
 ## Project layout, at a glance
 

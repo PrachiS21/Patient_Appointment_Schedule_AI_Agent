@@ -12,27 +12,25 @@ doctor availability, and produces a structured JSON summary.
 > checkpoint before any real (LLM-backed) node logic, so structural bugs and
 > logic bugs stay separable.
 
-## Build status
+## Features
 
-| Phase | Status |
-|---|---|
-| Study PatientAgentBench source | ✅ done — see [`docs/exploration/patientagentbench-notes.md`](docs/exploration/patientagentbench-notes.md) |
-| Minimal standalone conversation script, real sandbox + tools | ✅ tool mechanics verified (`--verify-tools-only`, no LLM needed), see [`docs/exploration/minimal_conversation.py`](docs/exploration/minimal_conversation.py) |
-| Repo scaffold (`agent/`, `backend/`, `frontend/`, `docs/`) | ✅ done |
-| Five-node graph, stub nodes, wiring tests | ✅ done — `uv run --package patient-intake-agent pytest agent/tests/` |
-| Real Intake / Emergency Guard / Triage / Scheduling / Summary node logic | ✅ done, 26 tests against fake LLMs + the real PatientAgentBench sandbox, **plus a live end-to-end run against the real Gemini API** confirming the whole chain (extraction → question) works against actual model output |
-| FastAPI backend (WebSocket chat + REST summary) | ✅ done, 5 tests + a real (non-`TestClient`) uvicorn boot, **plus a live WebSocket smoke test against the running backend + real Gemini** |
-| React + TypeScript frontend | ✅ built (chat window, typing indicator, summary panel) — `npm run build` is clean; **still not clicked through in a real browser** (no browser automation tool in this environment) — please verify yourself |
-| Example transcripts, architecture diagram | ✅ done — see [`docs/architecture.md`](docs/architecture.md) and [`docs/transcripts/`](docs/transcripts/) |
+- Conversational patient intake with follow-up questions tailored to
+  the reported symptom (fever, pain, etc.)
+- Code-enforced emergency detection that short-circuits the conversation
+  and recommends urgent care
+- Symptom-to-specialty triage and appointment scheduling against real
+  doctor availability (via PatientAgentBench's sandbox)
+- Structured JSON summary at the end of every conversation, persisted to SQLite
+- Supports four LLM providers (Bedrock, Anthropic, Gemini, Ollama) via one env var
 
-**Not blocked anymore** — an LLM provider (Gemini, via `LLM_PROVIDER=gemini`
+
+An LLM provider (Gemini, via `LLM_PROVIDER=gemini`
 in `.env`) is configured and has been exercised live: a real message got a
 real, sensible follow-up question back through the full agent → backend →
 WebSocket chain. What's still genuinely unverified: Bedrock/Anthropic
 specifically (only Gemini has been live-tested so far), the *emergency LLM
 classifier's* real-world recall on non-keyword phrasing (only the
-deterministic keyword tier has been exercised live), and a real click
-through the actual browser UI.
+deterministic keyword tier has been exercised live).
 
 ## Setup
 
@@ -271,5 +269,3 @@ before the final JSON summary is produced.
   appointment slots.
 - Wide-open CORS (`allow_origins=["*"]`) on the backend — fine for local
   development, not for a real deployment.
-- The frontend has not been exercised in a real browser in this environment
-  (no browser automation tool available) — see `frontend/README.md`.

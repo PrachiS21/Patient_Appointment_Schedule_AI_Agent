@@ -33,7 +33,7 @@ Two ways to run this file:
                          cancel). Works right now, no AWS credentials needed.
                          This is what was actually run to validate this
                          script during development (no Bedrock access was
-                         configured yet at write time).
+                         configured yet).
 
   (no flag)              Starts a real console conversation against Bedrock,
                          via DefaultAssistantAgent's LangGraph ReAct agent

@@ -10,8 +10,7 @@ Intake's confirmation judgment ×1, Triage's classifier ×1, Scheduling's
 slot-matcher ×1 — see the call-by-call breakdown below) was answered by a
 scripted response rather than a live Bedrock/Gemini call, since this
 particular transcript was captured for reproducibility (fixed inputs → fixed
-outputs). The behavior itself — including the confirmation step — has
-separately been verified live against real Gemini output; see the root
+outputs). The behavior itself — including the confirmation step — tested against Gemini output; see the root
 README's Build status. Everything except the LLM calls is the actual code
 path, not a mock: routing, symptom merging, real slot lookup, real booking
 via `HealthcareSandbox.book_appointment()`, JSON schema validation. The
@@ -105,8 +104,7 @@ canned responses are fixed in advance. A live run against a real model
 gathers more before confirming — the priority checklist in
 `nodes/intake.py::_EXTRACTION_PROMPT_TEMPLATE` (age, symptom-specific
 detail, onset/severity, history/medication, other symptoms) means it
-routinely takes 3-4 gathering turns plus the confirmation exchange. Example,
-verified live:
+routinely takes 3-4 gathering turns plus the confirmation exchange. Example:
 
 > **Patient:** My knee hurts a lot.
 >

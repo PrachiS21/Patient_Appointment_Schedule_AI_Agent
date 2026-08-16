@@ -121,8 +121,7 @@ def create_app(graph_factory=None, db_path: Path | None = None) -> FastAPI:
                     # overload (503), timeouts. Without this, any of those
                     # kills the WS connection with zero message ever sent to
                     # the frontend, which looks indistinguishable from "the
-                    # app is just stuck" (see the 429/503 incidents this was
-                    # built in response to). `sessions.set()` below never
+                    # app is just stuck". `sessions.set()` below never
                     # runs on this path, so the session's last *successful*
                     # state is untouched — the user can just retry.
                     logger.exception(

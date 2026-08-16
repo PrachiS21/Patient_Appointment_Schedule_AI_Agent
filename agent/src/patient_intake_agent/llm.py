@@ -142,11 +142,7 @@ def get_llm() -> "BaseChatModel":
         common_kwargs = {
             "max_tokens": 2048,
             # ChatGoogleGenerativeAI defaults to timeout=None (no per-attempt
-            # cap) and max_retries=6 — observed in practice to occasionally
-            # turn one structured-output call into 200+ seconds of silent
-            # retries with no user-visible error. 30s/2 retries means a bad
-            # attempt fails fast (worst case ~90s) instead of hanging near a
-            # minute-plus with nothing shown in the UI.
+            # cap) and max_retries=6
             "timeout": 30,
             "max_retries": 2,
         }
